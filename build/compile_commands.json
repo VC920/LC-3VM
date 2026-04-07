@@ -1,0 +1,8 @@
+[
+{
+  "directory": "C:/Users/vc/Documents/LC-3VM/build",
+  "command": "C:\\mingw64\\bin\\gcc.exe   -g -o CMakeFiles\\LC-3.dir\\LC-3.c.obj -c C:\\Users\\vc\\Documents\\LC-3VM\\LC-3.c",
+  "file": "C:/Users/vc/Documents/LC-3VM/LC-3.c",
+  "output": "CMakeFiles/LC-3.dir/LC-3.c.obj"
+}
+]

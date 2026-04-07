@@ -1,0 +1,3 @@
+C:/Users/vc/Documents/LC-3VM/build/CMakeFiles/LC-3.dir
+C:/Users/vc/Documents/LC-3VM/build/CMakeFiles/edit_cache.dir
+C:/Users/vc/Documents/LC-3VM/build/CMakeFiles/rebuild_cache.dir
