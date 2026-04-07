@@ -190,6 +190,7 @@ void read_image_file(FILE* file)
     }
 }
 
+
 /* 通过字符加载 */
 int read_image(const char* image_path)
 {
