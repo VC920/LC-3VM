@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <signal.h>
 
+/* 内存映射寄存器 */
 enum {
     MR_KBSR = 0xFE00, /* keyboard status */
     MR_KBDR = 0xFE02  /* keyboard data */
@@ -129,7 +130,7 @@ uint16_t reg[R_COUNT];
     }
 #endif
 
-// 结束后复原
+/* 结束后复原 */
 void handle_interrupt(int signal)
 {
     restore_input_buffering();
@@ -150,7 +151,7 @@ uint16_t sign_extend(uint16_t x, int bit_count)
 /* 大端转小端 */
 uint16_t swap16(uint16_t x)
 {
-    return (x << 16) | (x >> 8);
+    return (x << 8) | (x >> 8);
 }
 
 /* 更新标记 */
@@ -201,7 +202,7 @@ int read_image(const char* image_path)
 }
 
 /* 内存映射寄存器 */
-uint16_t mem_write(uint16_t address, uint16_t val)
+void mem_write(uint16_t address, uint16_t val)
 {
     memory[address] = val;
 }
@@ -223,8 +224,10 @@ uint16_t mem_read(uint16_t address)
     return memory[address];
 }
 
+/* main loop */
 int main(int argc, const char* argv[]) 
 {
+    // 加载程序
     if (argc < 2) 
     {
         // 显示使用字符串
@@ -243,7 +246,6 @@ int main(int argc, const char* argv[])
     // 平台设置
     signal(SIGINT, handle_interrupt);
     disable_input_buffering();
-    restore_input_buffering();
 
     // 设置默认标志 
     reg[R_COND] = FL_ZRO;
@@ -263,73 +265,201 @@ int main(int argc, const char* argv[])
         {
         case OP_ADD:
         {
-             
+            uint16_t r0 = (instr >> 9) & 0x7;       // 输出的位置 (DR)
+            uint16_t r1 = (instr >> 6) & 0x7;       // 第一个值 (SR1)
+            uint16_t imm_flag = (instr >> 5) & 0x1; // 是否立即模式
+
+            if (imm_flag)
+            {
+                uint16_t imm5 = sign_extend(instr & 0x1F, 5);
+                reg[r0] = reg[r1] + imm5;
+            }
+            else
+            {
+                uint16_t r2 = instr & 0x7;
+                reg[r0] = reg[r1] + reg[r2];
+            }
+
+            update_flags(r0);
         } break;
         case OP_AND:
-            // AND
-            break;
+        {
+            uint16_t r0 = (instr >> 9) & 0x7; // 输出的位置 (DR)
+            uint16_t r1 = (instr >> 6) & 0x7; // 第一个值 (SR1)
+            uint16_t imm_flag = (instr >> 5) & 0x1; // 是否立即模式
+
+            if (imm_flag)
+            {
+                uint16_t imm5 = sign_extend(instr & 0x1F, 5);
+                reg[r0] = reg[r1] & imm5;
+            }
+            else
+            {
+                uint16_t r2 = instr & 0x7;
+                reg[r0] = reg[r1] & reg[r2];
+            }
+
+            update_flags(r0);
+        } break;
         case OP_NOT:
-            // NOT
-            break;
+        {
+            uint16_t r0 = (instr >> 9) & 0x7; // 输出的位置 (DR)
+            uint16_t r1 = (instr >> 6) & 0x7; // 第一个值 (SR1)
+
+            reg[r0] = ~reg[r1];
+            update_flags(r0);
+        } break;
         case OP_BR:
-            // BR
-            break;
+        {
+            uint16_t pc_offset = sign_extend(instr & 0x1ff, 9); // PCoffset 9
+            uint16_t cond_flag = (instr >> 9) & 0x7; // Cond 位置
+
+            if (cond_flag & reg[R_COND])
+            {
+                reg[R_PC] += pc_offset;
+            }
+        } break;
         case OP_JMP:
-            // JMP
-            break;
+        {
+            // RET 一样
+            uint16_t r1 = (instr >> 6) & 0x7; // 第一个值 (SR1)
+            reg[R_PC] = reg[r1];
+        } break;
         case OP_JSR:
-            // JSR
-            break;
+        {
+            uint16_t r1 = (instr >> 6) & 0x7; // 第一个值 (SR1)
+            uint16_t long_pc_offset = sign_extend(instr& 0x7ff, 11); // PCoffset 11
+            uint16_t long_flag = (instr >> 11) & 1; // long 位置
+
+            reg[R_R7] = reg[R_PC];
+            if (long_flag)
+            {
+                reg[R_PC] += long_pc_offset;  // JSR
+            }
+            else
+            {
+                reg[R_PC] = reg[r1];    // JSRR
+            }
+        } break;
         case OP_LD:
-            // LD
-            break;
+        {
+            uint16_t r0 = (instr >> 9) & 0x7; // 输出的位置 (DR)
+            uint16_t pc_offset = sign_extend(instr & 0x1ff, 9); // PCoffset 9
+
+            reg[r0] = mem_read(reg[R_PC] + pc_offset);
+            update_flags(r0);
+        } break;
         case OP_LDI:
-            // LDI
-            break;
+        {
+            uint16_t r0 = (instr >> 9) & 0x7; // 输出的位置 (DR)
+            uint16_t pc_offset = sign_extend(instr & 0x1ff, 9); // PCoffset 9
+
+            // 把 pc_offset 加到 pc ，查看那个内存指向的位置获取最终值
+            reg[r0] = mem_read(mem_read(reg[R_PC] + pc_offset));
+            update_flags(r0);
+        } break;
         case OP_LDR:
-            // LDR
-            break;
+        {
+            uint16_t r0 = (instr >> 9) & 0x7; // 输出的位置 (DR)
+            uint16_t r1 = (instr >> 6) & 0x7; // 第一个值 (SR1)
+            uint16_t offset = sign_extend(instr & 0x3F, 6); // PCoffset 6
+
+            reg[r0] = mem_read(reg[r1] + offset);
+            update_flags(r0);
+        } break;
         case OP_LEA:
-            // LEA
-            break;
+        {
+            uint16_t r0 = (instr >> 9) & 0x7; // 输出的位置 (DR)
+            uint16_t pc_offset = sign_extend(instr & 0x1ff, 9); // PCoffset 9
+
+            reg[r0] = reg[R_PC] + pc_offset;
+            update_flags(r0);
+        } break;
         case OP_ST:
-            // ST
-            break;
+        {
+            uint16_t r0 = (instr >> 9) & 0x7; // 输出的位置 (DR)
+            uint16_t pc_offset = sign_extend(instr & 0x1ff, 9); // PCoffset 9
+
+            mem_write(reg[R_PC] + pc_offset, reg[r0]);
+        } break;
         case OP_STI:
-            // STI
-            break;
+        {
+            uint16_t r0 = (instr >> 9) & 0x7; // 输出的位置 (DR)
+            uint16_t pc_offset = sign_extend(instr & 0x1ff, 9); // PCoffset 9
+
+            mem_write(mem_read(reg[R_PC] + pc_offset), reg[r0]);
+        } break;
         case OP_STR:
-            // STR
-            break;
+        {
+            uint16_t r0 = (instr >> 9) & 0x7; // 输出的位置 (DR)
+            uint16_t r1 = (instr >> 6) & 0x7; // 第一个值 (SR1)
+            uint16_t offset = sign_extend(instr & 0x3F, 6); // PCoffset 6
+
+            mem_write(reg[r1] + offset, reg[r0]);
+        } break;
         case OP_TRAP:
-            // TRAP
-            break;
+        {
+            reg[R_R7] = reg[R_PC];
+
+            switch (instr & 0xFF)
+            {
+            case TRAP_GETC:
+            {
+                // 读取一个ASCII字符
+                reg[R_R0] = (uint16_t)getchar();
+                update_flags(R_R0);
+            } break;
+            case TRAP_OUT:
+            {
+                putc((char)reg[R_R0], stdout);
+                fflush(stdout);
+            } break;
+            case TRAP_PUTS:
+            {
+                // 一个一个字符打印
+                uint16_t* c = memory + reg[R_R0];
+                while (*c)
+                {
+                    putc((char)*c, stdout);
+                    ++c;
+                }
+                fflush(stdout);
+            } break;
+            case TRAP_IN:
+            {
+                printf("Enter a character: ");
+                char c = getchar();
+                putc(c, stdout);
+                fflush(stdout);
+                reg[R_R0] = (uint16_t)c;
+                update_flags(R_R0);
+            } break;
+            case TRAP_PUTSP:
+            {
+                // 一个字符一个字符打印，需要转换为大端
+                uint16_t* c = memory + reg[R_R0];
+                while (*c)
+                {
+                    char char1 = (*c) & 0xFF;
+                    putc(char1, stdout);
+                    char char2 = (*c) >> 8;
+                    if (char2) putc(char2, stdout);
+                    ++c;
+                }
+                fflush(stdout);
+            } break;
+            case TRAP_HALT:
+            {
+                puts("HALT");
+                fflush(stdout);
+                running = 0;
+            } break;
+            }
+        } break;
         case OP_RES:
         case OP_RTI:
         default:
-            // Bad Opcode
-            break;
-        }
-
-        switch (instr & 0xFF)
-        {
-        case TRAP_GETC:
-            // TRAP_GETC
-            break;
-        case TRAP_OUT:
-            // TRAP_OUT
-            break;
-        case TRAP_PUTS:
-            // TRAP_PUTS
-            break;
-        case TRAP_IN:
-            // TRAP_IN
-            break;
-        case TRAP_PUTSP:
-            // TRAP_PUTSP
-            break;
-        case TRAP_HALT:
-            // TRAP_HALT
+            abort();
             break;
         }
     }
